@@ -39,6 +39,11 @@ Bu oxirgi variantni production uchun ishlatmang.
 
 ## Bosh Menyu
 
+`/start` bosilganda bot avval til tanlashni ko'rsatadi:
+
+- `O'zbekcha` - lotin yozuvidagi menyu va javoblar
+- `Ўзбекча` - kirill yozuvidagi menyu va javoblar
+
 Bot bosh menyusida 4 ta bo'lim bor:
 
 - `🕋 Kirish vaqtlari` - Qo'qon shahri namoz kirish vaqtlari, bot avtomatik oladi
@@ -71,6 +76,7 @@ ADMIN_IDS=123456789,987654321
 Admin buyruqlar:
 
 - `/mosqueids` - masjid ID ro'yxatini ko'rish
+- `/usercount` - foydalanuvchilar sonini ko'rish
 - `/setlocation masjid_id lat lon manzil` - masjid lokatsiyasini saqlash
 - `/setmasjidtime masjid_id Bomdod=03:30 Peshin=12:45 Asr=18:00 Shom=19:50 Xufton=21:40` - masjidda o'qiladigan vaqtlarni saqlash
 - `/clearmasjidtime masjid_id` - masjidda o'qiladigan vaqtlarni o'chirish
@@ -109,7 +115,18 @@ Sheetni ulash:
 GOOGLE_SHEET_CSV_URL=https://docs.google.com/spreadsheets/d/e/.../pub?gid=0&single=true&output=csv
 ```
 
-Bot sheetdagi o'zgarishlarni 60 soniya cache bilan o'qiydi.
+Bot sheetdagi o'zgarishlarni odatda 15 soniya cache bilan o'qiydi.
+Cache muddatini `.env` orqali o'zgartirish mumkin:
+
+```env
+SHEET_CACHE_SECONDS=15
+```
+
+Admin sheetni darhol yangilashi mumkin:
+
+```text
+/refreshsheet
+```
 
 Fallback `mosques.json` formati:
 
