@@ -148,3 +148,4 @@ Masjidda o'qiladigan vaqtlar `prayer_times` ichida saqlanadi:
 ```
 
 Kirish vaqtlari admin tomonidan kiritilmaydi. Bot ularni Qo'qon shahri uchun avtomatik oladi. Google Sheets'da faqat masjid lokatsiyalari va masjidda o'qiladigan vaqtlar bo'ladi.
+# Namozvaqtlari
