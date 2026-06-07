@@ -1,0 +1,6 @@
+.env
+users.json
+notifications.json
+__pycache__/
+*.pyc
+.DS_Store
