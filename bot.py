@@ -85,6 +85,7 @@ TEXTS = {
         "times_missing": "Bu masjid uchun vaqtlar hali kiritilmagan.",
         "not_understood": "Tushunmadim. /help ni yuboring yoki menyudan tanlang.",
         "prayer_entered": "{prayer} vaqti kirdi",
+        "mosque_prayer_section": "Masjidlarda o'qilish vaqti",
         "mosque_location": "📍 <b>Masjid joylashuvi</b>",
         "mosque_prayer_times": "🕌 <b>Masjiddagi namoz vaqtlari</b>",
     },
@@ -115,6 +116,7 @@ TEXTS = {
         "times_missing": "Бу масжид учун вақтлар ҳали киритилмаган.",
         "not_understood": "Тушунмадим. /help ни юборинг ёки менюдан танланг.",
         "prayer_entered": "{prayer} вақти кирди",
+        "mosque_prayer_section": "Масжидларда ўқилиш вақти",
         "mosque_location": "📍 <b>Масжид жойлашуви</b>",
         "mosque_prayer_times": "🕌 <b>Масжиддаги намоз вақтлари</b>",
     },
@@ -576,12 +578,29 @@ def format_entry_times(target_date, times, lang=LANG_LATIN):
     return "\n".join(lines)
 
 
-def format_prayer_notification(prayer_name, prayer_time, lang=LANG_LATIN):
-    return (
-        f"🕋 <b>{tr(lang, 'prayer_entered').format(prayer=prayer_label(prayer_name, lang))}</b>\n\n"
-        f"{tr(lang, 'kokand')}\n"
-        f"{tr(lang, 'time')}: <b>{prayer_time}</b>"
-    )
+def format_prayer_notification(prayer_name, prayer_time, lang=LANG_LATIN, mosques=None):
+    lines = [
+        f"🕋 <b>{tr(lang, 'prayer_entered').format(prayer=prayer_label(prayer_name, lang))}</b>",
+        "",
+        tr(lang, "kokand"),
+        f"{tr(lang, 'time')}: <b>{prayer_time}</b>",
+    ]
+
+    mosque_lines = mosque_prayer_lines(mosques or [], prayer_name, lang)
+    if mosque_lines:
+        lines.extend(["", f"🕌 <b>{tr(lang, 'mosque_prayer_section')}</b>"])
+        lines.extend(mosque_lines)
+    return "\n".join(lines)
+
+
+def mosque_prayer_lines(mosques, prayer_name, lang=LANG_LATIN):
+    lines = []
+    for mosque in mosques:
+        prayer_time = (mosque.get("prayer_times") or {}).get(prayer_name)
+        if not prayer_time:
+            continue
+        lines.append(f"{mosque_name(mosque, lang)}: <b>{prayer_time}</b>")
+    return lines
 
 
 def format_mosque_prayer_times(mosque, lang=LANG_LATIN):
@@ -949,7 +968,7 @@ def active_chat_ids(users):
     return [chat_id for chat_id, data in users.items() if isinstance(data, dict) and data.get("active", True)]
 
 
-def check_prayer_notifications(token, users, notifications):
+def check_prayer_notifications(token, users, notifications, mosques):
     now = datetime.now(BOT_TIMEZONE)
     today = now.date()
     today_key = date_key(today)
@@ -970,7 +989,7 @@ def check_prayer_notifications(token, users, notifications):
 
         for chat_id in active_chat_ids(users):
             try:
-                text = format_prayer_notification(prayer_name, prayer_time, user_lang(users, chat_id))
+                text = format_prayer_notification(prayer_name, prayer_time, user_lang(users, chat_id), mosques)
                 send_message(token, chat_id, text)
             except Exception as exc:
                 print(f"Notification yuborish xatosi ({chat_id}): {exc}", file=sys.stderr)
@@ -1003,14 +1022,14 @@ def run():
     print("Bot ishga tushdi. To'xtatish uchun Ctrl+C bosing.")
 
     while running:
-        check_prayer_notifications(token, users, notifications)
+        mosques = load_mosques()
+        check_prayer_notifications(token, users, notifications, mosques)
         payload = {"timeout": 10}
         if offset is not None:
             payload["offset"] = offset
         try:
             result = telegram(token, "getUpdates", payload)
             for update in result.get("result", []):
-                mosques = load_mosques()
                 offset = update["update_id"] + 1
                 try:
                     handle_update(token, update, users, mosques)
