@@ -48,8 +48,8 @@ DEFAULT_SHEET_CACHE_SECONDS = 15
 mosques_cache = {"loaded_at": 0, "data": None}
 prayer_cache = {}
 BTN_ENTRY_TIMES = "🕋 Kirish vaqtlari"
-BTN_PRAYER_TIMES_IN_MOSQUES = "🕌 Namoz vaqtlari masjidlarda"
-BTN_MOSQUE_TIMES = "🕌 Masjidlardagi vaqtlar"
+BTN_PRAYER_TIMES_IN_MOSQUES = "🕌 Namoz bo'yicha vaqtlar"
+BTN_MOSQUE_TIMES = "📋 Masjid bo'yicha vaqtlar"
 BTN_MOSQUE_LOCATIONS = "📍 Masjid Joylashuvlari"
 BTN_NEAREST_MOSQUE = "🧭 Menga eng yaqin masjid"
 BTN_SEND_LOCATION = "📡 Lokatsiyamni yuborish"
@@ -63,8 +63,8 @@ TEXTS = {
     LANG_LATIN: {
         "kokand": "Qo'qon shahri",
         "entry_times": "🕋 Kirish vaqtlari",
-        "prayer_times_in_mosques": "🕌 Namoz vaqtlari masjidlarda",
-        "mosque_times": "🕌 Masjidlardagi vaqtlar",
+        "prayer_times_in_mosques": "🕌 Namoz bo'yicha vaqtlar",
+        "mosque_times": "📋 Masjid bo'yicha vaqtlar",
         "mosque_locations": "📍 Masjid Joylashuvlari",
         "nearest_mosque": "🧭 Menga eng yaqin masjid",
         "send_location": "📡 Lokatsiyamni yuborish",
@@ -102,8 +102,8 @@ TEXTS = {
     LANG_CYRILLIC: {
         "kokand": "Қўқон шаҳри",
         "entry_times": "🕋 Кириш вақтлари",
-        "prayer_times_in_mosques": "🕌 Намоз вақтлари масжидларда",
-        "mosque_times": "🕌 Масжидлардаги вақтлар",
+        "prayer_times_in_mosques": "🕌 Намоз бўйича вақтлар",
+        "mosque_times": "📋 Масжид бўйича вақтлар",
         "mosque_locations": "📍 Масжид жойлашувлари",
         "nearest_mosque": "🧭 Менга энг яқин масжид",
         "send_location": "📡 Локациямни юбориш",
@@ -805,13 +805,19 @@ def format_prayer_notification(prayer_name, prayer_time, lang=LANG_LATIN, mosque
 
 def mosque_prayer_lines(mosques, prayer_name, lang=LANG_LATIN):
     lines = []
-    for mosque in mosques:
+    for index, mosque in enumerate(mosques, start=1):
         prayer_time = (mosque.get("prayer_times") or {}).get(prayer_name)
         if not prayer_time:
             continue
         location_url = mosque_location_url(mosque)
-        location_link = f" - <a href=\"{location_url}\">{tr(lang, 'address')}</a>" if location_url else ""
-        lines.append(f"{mosque_name(mosque, lang)}: <b>{prayer_time}</b>{location_link}")
+        lines.append(f"<b>{index}. {mosque_name(mosque, lang)}</b>")
+        if location_url:
+            lines.append(f"   {tr(lang, 'time')}: <b>{prayer_time}</b> | <a href=\"{location_url}\">{tr(lang, 'address')}</a>")
+        else:
+            lines.append(f"   {tr(lang, 'time')}: <b>{prayer_time}</b>")
+        lines.append("")
+    if lines and lines[-1] == "":
+        lines.pop()
     return lines
 
 
@@ -1161,13 +1167,27 @@ def handle_update(token, update, users, mosques):
         send_message(token, chat_id, format_entry_times(today, times, lang), main_keyboard(mosques, lang))
         return
 
-    if text in {BTN_PRAYER_TIMES_IN_MOSQUES, tr(lang, "prayer_times_in_mosques"), "Namoz vaqtlari masjidlarda", "Намоз вақтлари масжидларда"}:
+    if text in {
+        BTN_PRAYER_TIMES_IN_MOSQUES,
+        tr(lang, "prayer_times_in_mosques"),
+        "Namoz bo'yicha vaqtlar",
+        "Namoz vaqtlari masjidlarda",
+        "Намоз бўйича вақтлар",
+        "Намоз вақтлари масжидларда",
+    }:
         users.setdefault(chat_id, {})["mode"] = "prayer_times_in_mosques"
         save_users(users)
         send_message(token, chat_id, tr(lang, "choose_prayer"), prayer_keyboard(lang))
         return
 
-    if text in {BTN_MOSQUE_TIMES, tr(lang, "mosque_times"), "Masjidlardagi vaqtlar", "Масжидлардаги вақтлар"}:
+    if text in {
+        BTN_MOSQUE_TIMES,
+        tr(lang, "mosque_times"),
+        "Masjid bo'yicha vaqtlar",
+        "Masjidlardagi vaqtlar",
+        "Масжид бўйича вақтлар",
+        "Масжидлардаги вақтлар",
+    }:
         users.setdefault(chat_id, {})["mode"] = "mosque_times"
         save_users(users)
         send_message(token, chat_id, tr(lang, "choose_mosque"), mosque_keyboard(mosques, lang))

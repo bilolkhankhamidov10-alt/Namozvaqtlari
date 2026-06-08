@@ -47,8 +47,8 @@ Bu oxirgi variantni production uchun ishlatmang.
 Bot bosh menyusida 5 ta bo'lim bor:
 
 - `🕋 Kirish vaqtlari` - Qo'qon shahri namoz kirish vaqtlari, bot avtomatik oladi
-- `🕌 Namoz vaqtlari masjidlarda` - 5 vaqt namozdan birini tanlab, masjidlarda o'qiladigan vaqtlarni ko'rish
-- `🕌 Masjidlardagi vaqtlar` - masjidni tanlab, o'sha masjiddagi barcha namoz vaqtlarini ko'rish
+- `🕌 Namoz bo'yicha vaqtlar` - 5 vaqt namozdan birini tanlab, masjidlarda o'qiladigan vaqtlarni ko'rish
+- `📋 Masjid bo'yicha vaqtlar` - masjidni tanlab, o'sha masjiddagi barcha namoz vaqtlarini ko'rish
 - `📍 Masjid Joylashuvlari` - masjid xarita havolasi va manzili
 - `🧭 Menga eng yaqin masjid` - foydalanuvchi lokatsiyasiga eng yaqin masjid
 
