@@ -306,6 +306,71 @@ def save_users(users):
     DATA_FILE.write_text(json.dumps(users, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def users_sheet_url():
+    return os.getenv("USERS_SHEET_WEBAPP_URL", "").strip()
+
+
+def merge_users(base, incoming):
+    merged = dict(base)
+    for chat_id, data in incoming.items():
+        if not isinstance(data, dict):
+            continue
+        current = merged.setdefault(str(chat_id), {})
+        current.update(data)
+    return merged
+
+
+def load_remote_users():
+    url = users_sheet_url()
+    if not url:
+        return {}
+    try:
+        response = request_json(f"{with_cache_buster(url)}&action=list")
+    except Exception as exc:
+        print(f"Google Sheets userlarni o'qish xatosi: {exc}", file=sys.stderr)
+        return {}
+
+    users = {}
+    rows = response.get("users", response if isinstance(response, list) else [])
+    for row in rows:
+        chat_id = str(row.get("chat_id", "")).strip()
+        if not chat_id:
+            continue
+        users[chat_id] = {
+            "active": str(row.get("active", "true")).lower() != "false",
+            "first_name": row.get("first_name", ""),
+            "username": row.get("username", ""),
+            "lang": row.get("lang", LANG_LATIN) or LANG_LATIN,
+            "last_seen": row.get("last_seen", ""),
+        }
+    return users
+
+
+def sync_remote_user(chat_id, user_data):
+    url = users_sheet_url()
+    if not url:
+        return
+    payload = {
+        "action": "upsert",
+        "chat_id": str(chat_id),
+        "active": user_data.get("active", True),
+        "first_name": user_data.get("first_name", ""),
+        "username": user_data.get("username", ""),
+        "lang": user_data.get("lang", LANG_LATIN),
+        "last_seen": user_data.get("last_seen", ""),
+    }
+    try:
+        request_json(url, payload)
+    except Exception as exc:
+        print(f"Google Sheets user sync xatosi ({chat_id}): {exc}", file=sys.stderr)
+
+
+def sync_all_remote_users(users):
+    for chat_id, data in users.items():
+        if isinstance(data, dict):
+            sync_remote_user(chat_id, data)
+
+
 def register_user(users, chat_id, message):
     user_data = users.setdefault(str(chat_id), {})
     user = message.get("from") or {}
@@ -314,6 +379,7 @@ def register_user(users, chat_id, message):
     user_data["username"] = user.get("username", user_data.get("username", ""))
     user_data["last_seen"] = datetime.now(BOT_TIMEZONE).isoformat(timespec="seconds")
     save_users(users)
+    sync_remote_user(chat_id, user_data)
 
 
 def load_notifications():
@@ -542,6 +608,7 @@ def admin_help_text():
         "<b>Admin buyruqlar</b>\n\n"
         "/mosqueids - masjid ID ro'yxati\n"
         "/usercount - foydalanuvchilar soni\n"
+        "/syncusers - lokal userlarni Google Sheets'ga yuborish\n"
         "/refreshsheet - Google Sheets ma'lumotlarini darhol yangilash\n"
         "/setlocation masjid_id lat lon manzil - lokatsiya saqlash\n"
         "/setmasjidtime masjid_id Bomdod=03:30 Peshin=12:45 Asr=18:00 Shom=19:50 Xufton=21:40\n"
@@ -861,8 +928,14 @@ def handle_admin_command(token, chat_id, text, mosques):
         return True
 
     if command == "/usercount":
-        users = load_users()
+        users = merge_users(load_remote_users(), load_users())
         send_message(token, chat_id, f"Foydalanuvchilar soni: <b>{len(active_chat_ids(users))}</b>", main_keyboard(mosques))
+        return True
+
+    if command == "/syncusers":
+        users = load_users()
+        sync_all_remote_users(users)
+        send_message(token, chat_id, f"Userlar Google Sheets'ga sync qilindi: <b>{len(active_chat_ids(users))}</b>", main_keyboard(mosques))
         return True
 
     if command == "/refreshsheet":
@@ -959,7 +1032,7 @@ def handle_update(token, update, users, mosques):
             send_location(token, chat_id, float(location_data["lat"]), float(location_data["lon"]), main_keyboard(mosques, lang))
         return
 
-    if text.startswith(("/admin", "/mosqueids", "/usercount", "/refreshsheet", "/setlocation", "/setmasjidtime", "/clearmasjidtime")):
+    if text.startswith(("/admin", "/mosqueids", "/usercount", "/syncusers", "/refreshsheet", "/setlocation", "/setmasjidtime", "/clearmasjidtime")):
         if handle_admin_command(token, chat_id, text, mosques):
             return
 
@@ -974,6 +1047,7 @@ def handle_update(token, update, users, mosques):
         users.setdefault(chat_id, {})["lang"] = lang
         users.setdefault(chat_id, {})["mode"] = "menu"
         save_users(users)
+        sync_remote_user(chat_id, users[chat_id])
         send_message(token, chat_id, tr(lang, "choose_menu"), main_keyboard(mosques, lang))
         return
 
@@ -987,6 +1061,7 @@ def handle_update(token, update, users, mosques):
     if text in {BTN_MAIN_MENU, BTN_BACK, tr(lang, "main_menu"), tr(lang, "back"), "Bosh menyu", "Ortga", "Бош меню", "Ортга"}:
         users.setdefault(chat_id, {})["mode"] = "menu"
         save_users(users)
+        sync_remote_user(chat_id, users[chat_id])
         send_message(token, chat_id, f"<b>{tr(lang, 'main_menu')}</b>", main_keyboard(mosques, lang))
         return
 
@@ -1143,7 +1218,8 @@ def run():
 
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
-    users = load_users()
+    users = merge_users(load_remote_users(), load_users())
+    save_users(users)
     notifications = load_notifications()
     offset = None
     print("Bot ishga tushdi. To'xtatish uchun Ctrl+C bosing.")

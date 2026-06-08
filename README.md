@@ -69,6 +69,76 @@ Har kuni soat `01:00` da bot foydalanuvchilarga bugungi namoz vaqtlarini yuborad
 
 Telegram cheklovi sabab bot foydalanuvchining eski yozgan xabarlarini o'chira olmaydi. Bot faqat o'zi kuzatib saqlagan bot xabarlarini o'chirishga harakat qiladi.
 
+## Userlarni Google Sheets'da Saqlash
+
+`users.json` lokal fayl bo'lgani uchun hosting/deploy almashganda yo'qolishi mumkin. Userlarni Google Sheets'da saqlash uchun Google Apps Script web app ishlatiladi.
+
+Sheet ustunlari:
+
+```text
+chat_id | active | first_name | username | lang | last_seen
+```
+
+Apps Script kodi:
+
+```javascript
+const SHEET_NAME = 'users';
+
+function sheet() {
+  return SpreadsheetApp.getActive().getSheetByName(SHEET_NAME);
+}
+
+function doGet(e) {
+  const rows = sheet().getDataRange().getValues();
+  const headers = rows.shift();
+  const users = rows
+    .filter(row => row[0])
+    .map(row => Object.fromEntries(headers.map((key, index) => [key, row[index]])));
+  return ContentService
+    .createTextOutput(JSON.stringify({ users }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  const data = JSON.parse(e.postData.contents);
+  const sh = sheet();
+  const rows = sh.getDataRange().getValues();
+  const headers = rows[0];
+  const chatIdIndex = headers.indexOf('chat_id');
+  let targetRow = -1;
+
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][chatIdIndex]) === String(data.chat_id)) {
+      targetRow = i + 1;
+      break;
+    }
+  }
+
+  const values = headers.map(key => data[key] ?? '');
+  if (targetRow === -1) {
+    sh.appendRow(values);
+  } else {
+    sh.getRange(targetRow, 1, 1, headers.length).setValues([values]);
+  }
+
+  return ContentService
+    .createTextOutput(JSON.stringify({ ok: true }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+```
+
+Apps Script deploy qilingandan keyin web app URL'ni `.env`ga yozing:
+
+```env
+USERS_SHEET_WEBAPP_URL=https://script.google.com/macros/s/.../exec
+```
+
+Eski lokal userlarni bir marta sheetga yuborish:
+
+```text
+/syncusers
+```
+
 ## Admin Sozlash
 
 Admin buyruqlar ishlashi uchun o'zingizning Telegram ID raqamingizni `.env` ichidagi `ADMIN_IDS`ga yozing. Bir nechta admin bo'lsa vergul bilan ajrating:
