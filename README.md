@@ -44,12 +44,13 @@ Bu oxirgi variantni production uchun ishlatmang.
 - `O'zbekcha` - lotin yozuvidagi menyu va javoblar
 - `Ўзбекча` - kirill yozuvidagi menyu va javoblar
 
-Bot bosh menyusida 4 ta bo'lim bor:
+Bot bosh menyusida 5 ta bo'lim bor:
 
 - `🕋 Kirish vaqtlari` - Qo'qon shahri namoz kirish vaqtlari, bot avtomatik oladi
-- `🕌 Masjidlardagi vaqtlar` - har bir masjidda o'qiladigan namoz vaqtlari
+- `🕌 Namoz vaqtlari masjidlarda` - 5 vaqt namozdan birini tanlab, masjidlarda o'qiladigan vaqtlarni ko'rish
+- `🕌 Masjidlardagi vaqtlar` - masjidni tanlab, o'sha masjiddagi barcha namoz vaqtlarini ko'rish
 - `📍 Masjid Joylashuvlari` - masjid xarita havolasi va manzili
-- `🧭 Men turgan joyga eng yaqin masjid` - foydalanuvchi lokatsiyasiga eng yaqin masjid
+- `🧭 Menga eng yaqin masjid` - foydalanuvchi lokatsiyasiga eng yaqin masjid
 
 Bot tugmalarida yo'nalish uchun ikonlar ishlatiladi:
 

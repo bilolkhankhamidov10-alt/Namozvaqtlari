@@ -48,9 +48,10 @@ DEFAULT_SHEET_CACHE_SECONDS = 15
 mosques_cache = {"loaded_at": 0, "data": None}
 prayer_cache = {}
 BTN_ENTRY_TIMES = "🕋 Kirish vaqtlari"
+BTN_PRAYER_TIMES_IN_MOSQUES = "🕌 Namoz vaqtlari masjidlarda"
 BTN_MOSQUE_TIMES = "🕌 Masjidlardagi vaqtlar"
 BTN_MOSQUE_LOCATIONS = "📍 Masjid Joylashuvlari"
-BTN_NEAREST_MOSQUE = "🧭 Men turgan joyga eng yaqin masjid"
+BTN_NEAREST_MOSQUE = "🧭 Menga eng yaqin masjid"
 BTN_SEND_LOCATION = "📡 Lokatsiyamni yuborish"
 BTN_BACK = "◀️ Ortga"
 BTN_MAIN_MENU = "🏠 Bosh menyu"
@@ -62,14 +63,16 @@ TEXTS = {
     LANG_LATIN: {
         "kokand": "Qo'qon shahri",
         "entry_times": "🕋 Kirish vaqtlari",
+        "prayer_times_in_mosques": "🕌 Namoz vaqtlari masjidlarda",
         "mosque_times": "🕌 Masjidlardagi vaqtlar",
         "mosque_locations": "📍 Masjid Joylashuvlari",
-        "nearest_mosque": "🧭 Men turgan joyga eng yaqin masjid",
+        "nearest_mosque": "🧭 Menga eng yaqin masjid",
         "send_location": "📡 Lokatsiyamni yuborish",
         "back": "◀️ Ortga",
         "main_menu": "🏠 Bosh menyu",
         "choose_language": "Tilni tanlang",
         "choose_menu": "Menyudan kerakli bo'limni tanlang.",
+        "choose_prayer": "🕌 <b>Namoz vaqtini tanlang</b>",
         "choose_mosque": "🕌 <b>Masjidni tanlang</b>",
         "choose_location_mosque": "📍 <b>Joylashuvini ko'rish uchun masjidni tanlang</b>",
         "send_location_prompt": "🧭 <b>Eng yaqin masjidni topish uchun lokatsiyangizni yuboring</b>",
@@ -99,14 +102,16 @@ TEXTS = {
     LANG_CYRILLIC: {
         "kokand": "Қўқон шаҳри",
         "entry_times": "🕋 Кириш вақтлари",
+        "prayer_times_in_mosques": "🕌 Намоз вақтлари масжидларда",
         "mosque_times": "🕌 Масжидлардаги вақтлар",
         "mosque_locations": "📍 Масжид жойлашувлари",
-        "nearest_mosque": "🧭 Мен турган жойга энг яқин масжид",
+        "nearest_mosque": "🧭 Менга энг яқин масжид",
         "send_location": "📡 Локациямни юбориш",
         "back": "◀️ Ортга",
         "main_menu": "🏠 Бош меню",
         "choose_language": "Тилни танланг",
         "choose_menu": "Менюдан керакли бўлимни танланг.",
+        "choose_prayer": "🕌 <b>Намоз вақтини танланг</b>",
         "choose_mosque": "🕌 <b>Масжидни танланг</b>",
         "choose_location_mosque": "📍 <b>Жойлашувини кўриш учун масжидни танланг</b>",
         "send_location_prompt": "🧭 <b>Энг яқин масжидни топиш учун локациянгизни юборинг</b>",
@@ -609,13 +614,24 @@ def normalize_text(value):
 def main_keyboard(mosques, lang=LANG_LATIN):
     return {
         "keyboard": [
-            [{"text": tr(lang, "entry_times")}, {"text": tr(lang, "mosque_times")}],
-            [{"text": prayer_button("Bomdod", lang)}, {"text": prayer_button("Peshin", lang)}],
-            [{"text": prayer_button("Asr", lang)}, {"text": prayer_button("Shom", lang)}],
-            [{"text": prayer_button("Xufton", lang)}, {"text": tr(lang, "mosque_locations")}],
+            [{"text": tr(lang, "entry_times")}, {"text": tr(lang, "prayer_times_in_mosques")}],
+            [{"text": tr(lang, "mosque_times")}, {"text": tr(lang, "mosque_locations")}],
             [{"text": tr(lang, "nearest_mosque")}],
         ],
         "resize_keyboard": True,
+    }
+
+
+def prayer_keyboard(lang=LANG_LATIN):
+    return {
+        "keyboard": [
+            [{"text": prayer_button("Bomdod", lang)}, {"text": prayer_button("Peshin", lang)}],
+            [{"text": prayer_button("Asr", lang)}, {"text": prayer_button("Shom", lang)}],
+            [{"text": prayer_button("Xufton", lang)}],
+            [{"text": tr(lang, "back")}, {"text": tr(lang, "main_menu")}],
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": True,
     }
 
 
@@ -1145,6 +1161,12 @@ def handle_update(token, update, users, mosques):
         send_message(token, chat_id, format_entry_times(today, times, lang), main_keyboard(mosques, lang))
         return
 
+    if text in {BTN_PRAYER_TIMES_IN_MOSQUES, tr(lang, "prayer_times_in_mosques"), "Namoz vaqtlari masjidlarda", "Намоз вақтлари масжидларда"}:
+        users.setdefault(chat_id, {})["mode"] = "prayer_times_in_mosques"
+        save_users(users)
+        send_message(token, chat_id, tr(lang, "choose_prayer"), prayer_keyboard(lang))
+        return
+
     if text in {BTN_MOSQUE_TIMES, tr(lang, "mosque_times"), "Masjidlardagi vaqtlar", "Масжидлардаги вақтлар"}:
         users.setdefault(chat_id, {})["mode"] = "mosque_times"
         save_users(users)
@@ -1157,7 +1179,7 @@ def handle_update(token, update, users, mosques):
         send_message(token, chat_id, tr(lang, "choose_location_mosque"), mosque_keyboard(mosques, lang))
         return
 
-    if text in {BTN_NEAREST_MOSQUE, tr(lang, "nearest_mosque"), "Men turgan joyga eng yaqin masjid", "Мен турган жойга энг яқин масжид"}:
+    if text in {BTN_NEAREST_MOSQUE, tr(lang, "nearest_mosque"), "Menga eng yaqin masjid", "Men turgan joyga eng yaqin masjid", "Менга энг яқин масжид", "Мен турган жойга энг яқин масжид"}:
         users.setdefault(chat_id, {})["mode"] = "nearest"
         save_users(users)
         send_message(token, chat_id, tr(lang, "send_location_prompt"), location_request_keyboard(lang))
@@ -1165,7 +1187,7 @@ def handle_update(token, update, users, mosques):
 
     prayer_name = prayer_from_button(text)
     if prayer_name:
-        send_message(token, chat_id, format_mosque_prayer_by_name(prayer_name, mosques, lang), main_keyboard(mosques, lang))
+        send_message(token, chat_id, format_mosque_prayer_by_name(prayer_name, mosques, lang), prayer_keyboard(lang))
         return
 
     mosque = find_mosque(mosques, text)
