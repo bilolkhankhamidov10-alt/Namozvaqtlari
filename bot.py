@@ -312,6 +312,7 @@ def save_users(users):
 
 
 def users_sheet_url():
+    load_env()
     return os.getenv("USERS_SHEET_WEBAPP_URL", "").strip()
 
 
