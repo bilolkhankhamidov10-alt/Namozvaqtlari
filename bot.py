@@ -179,6 +179,8 @@ running = True
 
 def load_env(path=".env"):
     env_path = Path(path)
+    if not env_path.is_absolute() and not env_path.exists():
+        env_path = Path(__file__).resolve().parent / path
     if not env_path.exists():
         return
     for raw_line in env_path.read_text(encoding="utf-8").splitlines():
@@ -186,7 +188,10 @@ def load_env(path=".env"):
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if not os.environ.get(key):
+            os.environ[key] = value
 
 
 def ssl_context():
@@ -620,6 +625,7 @@ def admin_help_text():
         "/mosqueids - masjid ID ro'yxati\n"
         "/usercount - foydalanuvchilar soni\n"
         "/syncusers - lokal userlarni Google Sheets'ga yuborish\n"
+        "/envcheck - muhim env sozlamalarini tekshirish\n"
         "/refreshsheet - Google Sheets ma'lumotlarini darhol yangilash\n"
         "/setlocation masjid_id lat lon manzil - lokatsiya saqlash\n"
         "/setmasjidtime masjid_id Bomdod=03:30 Peshin=12:45 Asr=18:00 Shom=19:50 Xufton=21:40\n"
@@ -943,6 +949,18 @@ def handle_admin_command(token, chat_id, text, mosques):
         send_message(token, chat_id, f"Foydalanuvchilar soni: <b>{len(active_chat_ids(users))}</b>", main_keyboard(mosques))
         return True
 
+    if command == "/envcheck":
+        users_url = users_sheet_url()
+        sheet_url = os.getenv("GOOGLE_SHEET_CSV_URL", "")
+        text = (
+            "<b>Env check</b>\n"
+            f"USERS_SHEET_WEBAPP_URL: <b>{'bor' if users_url else 'yoq'}</b>\n"
+            f"USERS URL /exec: <b>{'ha' if users_url.endswith('/exec') else 'yoq'}</b>\n"
+            f"GOOGLE_SHEET_CSV_URL: <b>{'bor' if sheet_url else 'yoq'}</b>"
+        )
+        send_message(token, chat_id, text, main_keyboard(mosques))
+        return True
+
     if command == "/syncusers":
         users = load_users()
         ok_count, errors = sync_all_remote_users(users)
@@ -1051,7 +1069,7 @@ def handle_update(token, update, users, mosques):
             send_location(token, chat_id, float(location_data["lat"]), float(location_data["lon"]), main_keyboard(mosques, lang))
         return
 
-    if text.startswith(("/admin", "/mosqueids", "/usercount", "/syncusers", "/refreshsheet", "/setlocation", "/setmasjidtime", "/clearmasjidtime")):
+    if text.startswith(("/admin", "/mosqueids", "/usercount", "/envcheck", "/syncusers", "/refreshsheet", "/setlocation", "/setmasjidtime", "/clearmasjidtime")):
         if handle_admin_command(token, chat_id, text, mosques):
             return
 
