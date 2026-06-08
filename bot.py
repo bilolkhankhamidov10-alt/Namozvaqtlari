@@ -87,6 +87,7 @@ TEXTS = {
         "not_understood": "Tushunmadim. /help ni yuboring yoki menyudan tanlang.",
         "prayer_entered": "{prayer} vaqti kirdi",
         "mosque_prayer_section": "Masjidlarda o'qilish vaqti",
+        "mosque_prayer_for": "{prayer} namozi masjidlarda",
         "daily_times": "Bugungi namoz vaqtlari",
         "additional_times": "Qo'shimcha vaqtlar",
         "tahajjud_note": "Tahajjud",
@@ -123,6 +124,7 @@ TEXTS = {
         "not_understood": "Тушунмадим. /help ни юборинг ёки менюдан танланг.",
         "prayer_entered": "{prayer} вақти кирди",
         "mosque_prayer_section": "Масжидларда ўқилиш вақти",
+        "mosque_prayer_for": "{prayer} намози масжидларда",
         "daily_times": "Бугунги намоз вақтлари",
         "additional_times": "Қўшимча вақтлар",
         "tahajjud_note": "Таҳажжуд",
@@ -580,6 +582,18 @@ def prayer_label(name, lang):
     return PRAYER_LABELS.get(lang, PRAYER_LABELS[LANG_LATIN]).get(name, name)
 
 
+def prayer_button(name, lang):
+    return f"🕌 {prayer_label(name, lang)}"
+
+
+def prayer_from_button(text):
+    normalized = normalize_text(text.replace("🕌", ""))
+    for name in NOTIFICATION_PRAYERS:
+        if normalized in {normalize_text(name), normalize_text(prayer_label(name, LANG_LATIN)), normalize_text(prayer_label(name, LANG_CYRILLIC))}:
+            return name
+    return None
+
+
 def normalize_text(value):
     return (
         value.strip()
@@ -595,9 +609,10 @@ def normalize_text(value):
 def main_keyboard(mosques, lang=LANG_LATIN):
     return {
         "keyboard": [
-            [{"text": tr(lang, "entry_times")}],
-            [{"text": tr(lang, "mosque_times")}],
-            [{"text": tr(lang, "mosque_locations")}],
+            [{"text": tr(lang, "entry_times")}, {"text": tr(lang, "mosque_times")}],
+            [{"text": prayer_button("Bomdod", lang)}, {"text": prayer_button("Peshin", lang)}],
+            [{"text": prayer_button("Asr", lang)}, {"text": prayer_button("Shom", lang)}],
+            [{"text": prayer_button("Xufton", lang)}, {"text": tr(lang, "mosque_locations")}],
             [{"text": tr(lang, "nearest_mosque")}],
         ],
         "resize_keyboard": True,
@@ -778,8 +793,30 @@ def mosque_prayer_lines(mosques, prayer_name, lang=LANG_LATIN):
         prayer_time = (mosque.get("prayer_times") or {}).get(prayer_name)
         if not prayer_time:
             continue
-        lines.append(f"{mosque_name(mosque, lang)}: <b>{prayer_time}</b>")
+        location_url = mosque_location_url(mosque)
+        location_link = f" - <a href=\"{location_url}\">{tr(lang, 'address')}</a>" if location_url else ""
+        lines.append(f"{mosque_name(mosque, lang)}: <b>{prayer_time}</b>{location_link}")
     return lines
+
+
+def mosque_location_url(mosque):
+    location = mosque.get("location") or {}
+    if not location.get("lat") or not location.get("lon"):
+        return ""
+    return f"https://maps.google.com/?q={location['lat']},{location['lon']}"
+
+
+def format_mosque_prayer_by_name(prayer_name, mosques, lang=LANG_LATIN):
+    lines = [
+        f"🕌 <b>{tr(lang, 'mosque_prayer_for').format(prayer=prayer_label(prayer_name, lang))}</b>",
+        "",
+    ]
+    prayer_lines = mosque_prayer_lines(mosques, prayer_name, lang)
+    if not prayer_lines:
+        lines.append(tr(lang, "times_missing"))
+        return "\n".join(lines)
+    lines.extend(prayer_lines)
+    return "\n".join(lines)
 
 
 def format_mosque_prayer_times(mosque, lang=LANG_LATIN):
@@ -1124,6 +1161,11 @@ def handle_update(token, update, users, mosques):
         users.setdefault(chat_id, {})["mode"] = "nearest"
         save_users(users)
         send_message(token, chat_id, tr(lang, "send_location_prompt"), location_request_keyboard(lang))
+        return
+
+    prayer_name = prayer_from_button(text)
+    if prayer_name:
+        send_message(token, chat_id, format_mosque_prayer_by_name(prayer_name, mosques, lang), main_keyboard(mosques, lang))
         return
 
     mosque = find_mosque(mosques, text)
