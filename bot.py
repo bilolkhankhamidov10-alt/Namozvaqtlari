@@ -349,7 +349,7 @@ def load_remote_users():
 def sync_remote_user(chat_id, user_data):
     url = users_sheet_url()
     if not url:
-        return
+        return False, "USERS_SHEET_WEBAPP_URL sozlanmagan"
     payload = {
         "action": "upsert",
         "chat_id": str(chat_id),
@@ -360,15 +360,26 @@ def sync_remote_user(chat_id, user_data):
         "last_seen": user_data.get("last_seen", ""),
     }
     try:
-        request_json(url, payload)
+        response = request_json(url, payload)
     except Exception as exc:
         print(f"Google Sheets user sync xatosi ({chat_id}): {exc}", file=sys.stderr)
+        return False, str(exc)
+    if response.get("ok") is not True:
+        return False, json.dumps(response, ensure_ascii=False)
+    return True, ""
 
 
 def sync_all_remote_users(users):
+    ok_count = 0
+    errors = []
     for chat_id, data in users.items():
         if isinstance(data, dict):
-            sync_remote_user(chat_id, data)
+            ok, error = sync_remote_user(chat_id, data)
+            if ok:
+                ok_count += 1
+            else:
+                errors.append(f"{chat_id}: {error}")
+    return ok_count, errors
 
 
 def register_user(users, chat_id, message):
@@ -934,8 +945,16 @@ def handle_admin_command(token, chat_id, text, mosques):
 
     if command == "/syncusers":
         users = load_users()
-        sync_all_remote_users(users)
-        send_message(token, chat_id, f"Userlar Google Sheets'ga sync qilindi: <b>{len(active_chat_ids(users))}</b>", main_keyboard(mosques))
+        ok_count, errors = sync_all_remote_users(users)
+        if errors:
+            send_message(
+                token,
+                chat_id,
+                f"Sync tugadi.\nMuvaffaqiyatli: <b>{ok_count}</b>\nXato: <b>{len(errors)}</b>\n\nBirinchi xato:\n<code>{errors[0]}</code>",
+                main_keyboard(mosques),
+            )
+            return True
+        send_message(token, chat_id, f"Userlar Google Sheets'ga sync qilindi: <b>{ok_count}</b>", main_keyboard(mosques))
         return True
 
     if command == "/refreshsheet":

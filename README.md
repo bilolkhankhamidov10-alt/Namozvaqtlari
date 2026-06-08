@@ -83,13 +83,29 @@ Apps Script kodi:
 
 ```javascript
 const SHEET_NAME = 'users';
+const HEADERS = ['chat_id', 'active', 'first_name', 'username', 'lang', 'last_seen'];
 
 function sheet() {
-  return SpreadsheetApp.getActive().getSheetByName(SHEET_NAME);
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(SHEET_NAME);
+  if (!sh) {
+    sh = ss.insertSheet(SHEET_NAME);
+  }
+  ensureHeaders(sh);
+  return sh;
+}
+
+function ensureHeaders(sh) {
+  const firstRow = sh.getRange(1, 1, 1, HEADERS.length).getValues()[0];
+  const hasHeaders = HEADERS.every((header, index) => firstRow[index] === header);
+  if (!hasHeaders) {
+    sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
+  }
 }
 
 function doGet(e) {
-  const rows = sheet().getDataRange().getValues();
+  const sh = sheet();
+  const rows = sh.getDataRange().getValues();
   const headers = rows.shift();
   const users = rows
     .filter(row => row[0])
