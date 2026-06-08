@@ -65,6 +65,10 @@ Bot foydalanuvchi bir marta yozganidan keyin uni `users.json` ichida saqlaydi. B
 
 Takror yubormaslik holati `notifications.json` faylida saqlanadi.
 
+Har kuni soat `01:00` da bot foydalanuvchilarga bugungi namoz vaqtlarini yuboradi. Xabarda Tahajjud oralig'i, Zuho va Qiyom vaqti ham bo'ladi.
+
+Telegram cheklovi sabab bot foydalanuvchining eski yozgan xabarlarini o'chira olmaydi. Bot faqat o'zi kuzatib saqlagan bot xabarlarini o'chirishga harakat qiladi.
+
 ## Admin Sozlash
 
 Admin buyruqlar ishlashi uchun o'zingizning Telegram ID raqamingizni `.env` ichidagi `ADMIN_IDS`ga yozing. Bir nechta admin bo'lsa vergul bilan ajrating:

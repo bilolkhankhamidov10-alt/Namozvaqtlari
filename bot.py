@@ -42,10 +42,11 @@ DEFAULT_MOSQUES = [
     {"id": "muhammad_said_xoja", "name": "Muhammad Said Xo'ja (Tulaboy)", "location": {}, "prayer_times": {}, "times": {}, "offsets": {}},
 ]
 PRAYER_NAMES = ("Bomdod", "Quyosh", "Peshin", "Asr", "Shom", "Xufton")
+EXTRA_TIME_NAMES = ("Tahajjud", "Zuho", "Qiyom")
 NOTIFICATION_PRAYERS = ("Bomdod", "Peshin", "Asr", "Shom", "Xufton")
 DEFAULT_SHEET_CACHE_SECONDS = 15
 mosques_cache = {"loaded_at": 0, "data": None}
-prayer_cache = {"date": None, "times": None}
+prayer_cache = {}
 BTN_ENTRY_TIMES = "🕋 Kirish vaqtlari"
 BTN_MOSQUE_TIMES = "🕌 Masjidlardagi vaqtlar"
 BTN_MOSQUE_LOCATIONS = "📍 Masjid Joylashuvlari"
@@ -86,6 +87,11 @@ TEXTS = {
         "not_understood": "Tushunmadim. /help ni yuboring yoki menyudan tanlang.",
         "prayer_entered": "{prayer} vaqti kirdi",
         "mosque_prayer_section": "Masjidlarda o'qilish vaqti",
+        "daily_times": "Bugungi namoz vaqtlari",
+        "additional_times": "Qo'shimcha vaqtlar",
+        "tahajjud_note": "Tahajjud",
+        "zuho_note": "Zuho",
+        "qiyom_note": "Qiyom",
         "mosque_location": "📍 <b>Masjid joylashuvi</b>",
         "mosque_prayer_times": "🕌 <b>Masjiddagi namoz vaqtlari</b>",
     },
@@ -117,6 +123,11 @@ TEXTS = {
         "not_understood": "Тушунмадим. /help ни юборинг ёки менюдан танланг.",
         "prayer_entered": "{prayer} вақти кирди",
         "mosque_prayer_section": "Масжидларда ўқилиш вақти",
+        "daily_times": "Бугунги намоз вақтлари",
+        "additional_times": "Қўшимча вақтлар",
+        "tahajjud_note": "Таҳажжуд",
+        "zuho_note": "Зуҳо",
+        "qiyom_note": "Қиём",
         "mosque_location": "📍 <b>Масжид жойлашуви</b>",
         "mosque_prayer_times": "🕌 <b>Масжиддаги намоз вақтлари</b>",
     },
@@ -129,6 +140,9 @@ PRAYER_LABELS = {
         "Asr": "Asr",
         "Shom": "Shom",
         "Xufton": "Xufton",
+        "Tahajjud": "Tahajjud",
+        "Zuho": "Zuho",
+        "Qiyom": "Qiyom",
     },
     LANG_CYRILLIC: {
         "Bomdod": "Бомдод",
@@ -137,6 +151,9 @@ PRAYER_LABELS = {
         "Asr": "Аср",
         "Shom": "Шом",
         "Xufton": "Хуфтон",
+        "Tahajjud": "Таҳажжуд",
+        "Zuho": "Зуҳо",
+        "Qiyom": "Қиём",
     },
 }
 MOSQUE_NAMES_CYRILLIC = {
@@ -225,7 +242,7 @@ def send_message(token, chat_id, text, reply_markup=None):
     }
     if reply_markup:
         payload["reply_markup"] = reply_markup
-    telegram(token, "sendMessage", payload)
+    return telegram(token, "sendMessage", payload)
 
 
 def send_location(token, chat_id, latitude, longitude, reply_markup=None):
@@ -236,7 +253,44 @@ def send_location(token, chat_id, latitude, longitude, reply_markup=None):
     }
     if reply_markup:
         payload["reply_markup"] = reply_markup
-    telegram(token, "sendLocation", payload)
+    return telegram(token, "sendLocation", payload)
+
+
+def delete_message(token, chat_id, message_id):
+    return telegram(token, "deleteMessage", {"chat_id": chat_id, "message_id": message_id})
+
+
+def remember_bot_message(users, chat_id, response):
+    message_id = (response or {}).get("result", {}).get("message_id")
+    if not message_id:
+        return
+    data = users.setdefault(str(chat_id), {})
+    messages = data.setdefault("bot_messages", [])
+    messages.append(message_id)
+    data["bot_messages"] = messages[-80:]
+    save_users(users)
+
+
+def send_tracked_message(token, users, chat_id, text, reply_markup=None):
+    response = send_message(token, chat_id, text, reply_markup)
+    remember_bot_message(users, chat_id, response)
+    return response
+
+
+def clear_tracked_bot_messages(token, users, chat_id):
+    data = users.setdefault(str(chat_id), {})
+    message_ids = data.get("bot_messages", [])
+    if not message_ids:
+        return
+    kept = []
+    for message_id in message_ids:
+        try:
+            delete_message(token, chat_id, message_id)
+        except Exception as exc:
+            print(f"Xabarni o'chirish xatosi ({chat_id}, {message_id}): {exc}", file=sys.stderr)
+            kept.append(message_id)
+    data["bot_messages"] = kept[-20:]
+    save_users(users)
 
 
 def load_users():
@@ -497,8 +551,8 @@ def admin_help_text():
 
 def prayer_times_by_kokand(target_date):
     key = date_key(target_date)
-    if prayer_cache["date"] == key and prayer_cache["times"]:
-        return prayer_cache["times"]
+    if key in prayer_cache:
+        return prayer_cache[key]
 
     params = urllib.parse.urlencode(
         {
@@ -510,8 +564,7 @@ def prayer_times_by_kokand(target_date):
         }
     )
     times = fetch_prayer_times(f"{PRAYER_CITY_API.format(day=target_date.strftime('%d-%m-%Y'))}?{params}")
-    prayer_cache["date"] = key
-    prayer_cache["times"] = times
+    prayer_cache[key] = times
     return times
 
 
@@ -547,6 +600,30 @@ def add_minutes(value, minutes):
     return (parsed + timedelta(minutes=minutes)).strftime("%H:%M")
 
 
+def time_to_minutes(value):
+    parsed = datetime.strptime(value, "%H:%M")
+    return parsed.hour * 60 + parsed.minute
+
+
+def minutes_to_time(minutes):
+    minutes = minutes % (24 * 60)
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+def extended_times_for_date(target_date):
+    today_times = prayer_times_by_kokand(target_date)
+    yesterday_times = prayer_times_by_kokand(target_date - timedelta(days=1))
+    shom_previous = time_to_minutes(yesterday_times["Shom"])
+    bomdod_today = time_to_minutes(today_times["Bomdod"]) + 24 * 60
+    night_length = bomdod_today - shom_previous
+    tahajjud_start = shom_previous + (night_length * 2 // 3)
+    return {
+        "Tahajjud": f"{minutes_to_time(tahajjud_start)} - {today_times['Bomdod']}",
+        "Zuho": add_minutes(today_times["Quyosh"], 20),
+        "Qiyom": add_minutes(today_times["Peshin"], -5),
+    }
+
+
 def format_times(title, mosque, target_date, times, lang=LANG_LATIN):
     lines = [
         f"🕋 <b>{title}</b>",
@@ -575,6 +652,23 @@ def format_entry_times(target_date, times, lang=LANG_LATIN):
         "",
     ]
     lines.extend(f"{prayer_label(name, lang)}: <b>{times[name]}</b>" for name in PRAYER_NAMES if name in times)
+    extra_times = extended_times_for_date(target_date)
+    lines.extend(["", f"✨ <b>{tr(lang, 'additional_times')}</b>"])
+    lines.extend(f"{prayer_label(name, lang)}: <b>{extra_times[name]}</b>" for name in EXTRA_TIME_NAMES if name in extra_times)
+    return "\n".join(lines)
+
+
+def format_daily_times(target_date, times, lang=LANG_LATIN):
+    lines = [
+        f"📅 <b>{tr(lang, 'daily_times')}</b>",
+        f"{tr(lang, 'city')}: <b>{tr(lang, 'kokand')}</b>",
+        f"{tr(lang, 'date')}: <b>{target_date.strftime('%d.%m.%Y')}</b>",
+        "",
+    ]
+    lines.extend(f"{prayer_label(name, lang)}: <b>{times[name]}</b>" for name in PRAYER_NAMES if name in times)
+    extra_times = extended_times_for_date(target_date)
+    lines.extend(["", f"✨ <b>{tr(lang, 'additional_times')}</b>"])
+    lines.extend(f"{prayer_label(name, lang)}: <b>{extra_times[name]}</b>" for name in EXTRA_TIME_NAMES if name in extra_times)
     return "\n".join(lines)
 
 
@@ -990,7 +1084,7 @@ def check_prayer_notifications(token, users, notifications, mosques):
         for chat_id in active_chat_ids(users):
             try:
                 text = format_prayer_notification(prayer_name, prayer_time, user_lang(users, chat_id), mosques)
-                send_message(token, chat_id, text)
+                send_tracked_message(token, users, chat_id, text)
             except Exception as exc:
                 print(f"Notification yuborish xatosi ({chat_id}): {exc}", file=sys.stderr)
         sent_today.append(prayer_name)
@@ -1000,6 +1094,39 @@ def check_prayer_notifications(token, users, notifications, mosques):
         notifications.clear()
         notifications[today_key] = sent_today
         save_notifications(notifications)
+
+
+def check_daily_summary(token, users, notifications, mosques):
+    now = datetime.now(BOT_TIMEZONE)
+    if now.strftime("%H:%M") != "01:00":
+        return
+
+    today = now.date()
+    today_key = date_key(today)
+    sent_key = "daily_summary"
+    sent_today = notifications.setdefault(today_key, [])
+    if sent_key in sent_today:
+        return
+
+    try:
+        times = prayer_times_by_kokand(today)
+    except Exception as exc:
+        print(f"Kunlik jadval vaqtlarini olish xatosi: {exc}", file=sys.stderr)
+        return
+
+    for chat_id in active_chat_ids(users):
+        lang = user_lang(users, chat_id)
+        try:
+            clear_tracked_bot_messages(token, users, chat_id)
+            text = format_daily_times(today, times, lang)
+            send_tracked_message(token, users, chat_id, text, main_keyboard(mosques, lang))
+        except Exception as exc:
+            print(f"Kunlik jadval yuborish xatosi ({chat_id}): {exc}", file=sys.stderr)
+
+    sent_today.append(sent_key)
+    notifications.clear()
+    notifications[today_key] = sent_today
+    save_notifications(notifications)
 
 
 def shutdown(_signum, _frame):
@@ -1023,6 +1150,7 @@ def run():
 
     while running:
         mosques = load_mosques()
+        check_daily_summary(token, users, notifications, mosques)
         check_prayer_notifications(token, users, notifications, mosques)
         payload = {"timeout": 10}
         if offset is not None:
