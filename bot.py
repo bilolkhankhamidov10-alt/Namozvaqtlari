@@ -44,6 +44,8 @@ DEFAULT_MOSQUES = [
 PRAYER_NAMES = ("Bomdod", "Quyosh", "Peshin", "Asr", "Shom", "Xufton")
 EXTRA_TIME_NAMES = ("Tahajjud", "Zuho", "Qiyom")
 NOTIFICATION_PRAYERS = ("Bomdod", "Peshin", "Asr", "Shom", "Xufton")
+DAILY_CLEANUP_TIME = "00:59"
+DAILY_SUMMARY_TIME = "01:00"
 DEFAULT_SHEET_CACHE_SECONDS = 15
 mosques_cache = {"loaded_at": 0, "data": None}
 prayer_cache = {}
@@ -1164,7 +1166,7 @@ def handle_update(token, update, users, mosques):
 
     if text in {BTN_ENTRY_TIMES, tr(lang, "entry_times"), "Kirish vaqtlari", "Кириш вақтлари"}:
         times = prayer_times_by_kokand(today)
-        send_message(token, chat_id, format_entry_times(today, times, lang), main_keyboard(mosques, lang))
+        send_tracked_message(token, users, chat_id, format_entry_times(today, times, lang), main_keyboard(mosques, lang))
         return
 
     if text in {
@@ -1207,7 +1209,7 @@ def handle_update(token, update, users, mosques):
 
     prayer_name = prayer_from_button(text)
     if prayer_name:
-        send_message(token, chat_id, format_mosque_prayer_by_name(prayer_name, mosques, lang), prayer_keyboard(lang))
+        send_tracked_message(token, users, chat_id, format_mosque_prayer_by_name(prayer_name, mosques, lang), prayer_keyboard(lang))
         return
 
     mosque = find_mosque(mosques, text)
@@ -1218,12 +1220,12 @@ def handle_update(token, update, users, mosques):
         if mode == "mosque_locations":
             send_mosque_location(token, chat_id, mosque, mosques, lang)
             return
-        send_message(token, chat_id, format_mosque_prayer_times(mosque, lang), main_keyboard(mosques, lang))
+        send_tracked_message(token, users, chat_id, format_mosque_prayer_times(mosque, lang), main_keyboard(mosques, lang))
         return
 
     if text in {"/today", "/entry"}:
         times = prayer_times_by_kokand(today)
-        send_message(token, chat_id, format_entry_times(today, times, lang), main_keyboard(mosques, lang))
+        send_tracked_message(token, users, chat_id, format_entry_times(today, times, lang), main_keyboard(mosques, lang))
         return
 
     if text in {"/mosques"}:
@@ -1293,9 +1295,32 @@ def check_prayer_notifications(token, users, notifications, mosques):
         save_notifications(notifications)
 
 
+def check_daily_cleanup(token, users, notifications):
+    now = datetime.now(BOT_TIMEZONE)
+    if now.strftime("%H:%M") != DAILY_CLEANUP_TIME:
+        return
+
+    today_key = date_key(now.date())
+    sent_key = "daily_cleanup"
+    sent_today = notifications.setdefault(today_key, [])
+    if sent_key in sent_today:
+        return
+
+    for chat_id in active_chat_ids(users):
+        try:
+            clear_tracked_bot_messages(token, users, chat_id)
+        except Exception as exc:
+            print(f"Kunlik tozalash xatosi ({chat_id}): {exc}", file=sys.stderr)
+
+    sent_today.append(sent_key)
+    notifications.clear()
+    notifications[today_key] = sent_today
+    save_notifications(notifications)
+
+
 def check_daily_summary(token, users, notifications, mosques):
     now = datetime.now(BOT_TIMEZONE)
-    if now.strftime("%H:%M") != "01:00":
+    if now.strftime("%H:%M") != DAILY_SUMMARY_TIME:
         return
 
     today = now.date()
@@ -1348,6 +1373,7 @@ def run():
 
     while running:
         mosques = load_mosques()
+        check_daily_cleanup(token, users, notifications)
         check_daily_summary(token, users, notifications, mosques)
         check_prayer_notifications(token, users, notifications, mosques)
         payload = {"timeout": 10}
