@@ -285,10 +285,46 @@ def remember_bot_message(users, chat_id, response):
     save_users(users)
 
 
+def forget_bot_message_id(users, chat_id, message_id):
+    data = users.setdefault(str(chat_id), {})
+    data["bot_messages"] = [item for item in data.get("bot_messages", []) if item != message_id]
+
+
 def send_tracked_message(token, users, chat_id, text, reply_markup=None):
     response = send_message(token, chat_id, text, reply_markup)
     remember_bot_message(users, chat_id, response)
     return response
+
+
+def preview_message_key(target_date, prayer_name):
+    return f"{date_key(target_date)}:{prayer_name}"
+
+
+def send_preview_message(token, users, chat_id, preview_key, text):
+    response = send_tracked_message(token, users, chat_id, text)
+    message_id = (response or {}).get("result", {}).get("message_id")
+    if not message_id:
+        return response
+    data = users.setdefault(str(chat_id), {})
+    previews = data.setdefault("preview_messages", {})
+    previews[preview_key] = message_id
+    save_users(users)
+    return response
+
+
+def delete_preview_message(token, users, chat_id, preview_key):
+    data = users.setdefault(str(chat_id), {})
+    previews = data.get("preview_messages") or {}
+    message_id = previews.pop(preview_key, None)
+    if not message_id:
+        return
+    try:
+        delete_message(token, chat_id, message_id)
+    except Exception as exc:
+        print(f"Preview xabarni o'chirish xatosi ({chat_id}, {message_id}): {exc}", file=sys.stderr)
+    forget_bot_message_id(users, chat_id, message_id)
+    data["preview_messages"] = previews
+    save_users(users)
 
 
 def clear_tracked_bot_messages(token, users, chat_id):
@@ -304,6 +340,7 @@ def clear_tracked_bot_messages(token, users, chat_id):
             print(f"Xabarni o'chirish xatosi ({chat_id}, {message_id}): {exc}", file=sys.stderr)
             kept.append(message_id)
     data["bot_messages"] = kept[-20:]
+    data["preview_messages"] = {}
     save_users(users)
 
 
@@ -805,6 +842,22 @@ def format_prayer_notification(prayer_name, prayer_time, lang=LANG_LATIN, mosque
     return "\n".join(lines)
 
 
+def format_next_prayer_preview(prayer_name, prayer_time, lang=LANG_LATIN, mosques=None):
+    title = "⏭️ <b>Keyingi namoz vaqti</b>" if lang == LANG_LATIN else "⏭️ <b>Кейинги намоз вақти</b>"
+    lines = [
+        title,
+        "",
+        tr(lang, "kokand"),
+        f"{prayer_label(prayer_name, lang)}: <b>{prayer_time}</b>",
+    ]
+
+    mosque_lines = mosque_prayer_lines(mosques or [], prayer_name, lang)
+    if mosque_lines:
+        lines.extend(["", f"🕌 <b>{tr(lang, 'mosque_prayer_section')}</b>"])
+        lines.extend(mosque_lines)
+    return "\n".join(lines)
+
+
 def mosque_prayer_lines(mosques, prayer_name, lang=LANG_LATIN):
     lines = []
     for index, mosque in enumerate(mosques, start=1):
@@ -1261,6 +1314,70 @@ def active_chat_ids(users):
     return [chat_id for chat_id, data in users.items() if isinstance(data, dict) and data.get("active", True)]
 
 
+def earliest_mosque_prayer_time(mosques, prayer_name):
+    earliest_time = None
+    for mosque in mosques:
+        prayer_time = (mosque.get("prayer_times") or {}).get(prayer_name)
+        if not prayer_time or not valid_time(prayer_time):
+            continue
+        if earliest_time is None or prayer_time < earliest_time:
+            earliest_time = prayer_time
+    return earliest_time
+
+
+def preview_trigger_time(target_date, prayer_time):
+    hour, minute = map(int, prayer_time.split(":", 1))
+    return datetime(target_date.year, target_date.month, target_date.day, hour, minute, tzinfo=BOT_TIMEZONE) - timedelta(hours=1)
+
+
+def check_next_prayer_previews(token, users, notifications, mosques):
+    now = datetime.now(BOT_TIMEZONE)
+    today = now.date()
+    current_time = now.strftime("%H:%M")
+    today_key = date_key(today)
+    sent_today = notifications.setdefault(today_key, [])
+    changed = False
+
+    for prayer_name in NOTIFICATION_PRAYERS:
+        earliest_time = earliest_mosque_prayer_time(mosques, prayer_name)
+        if not earliest_time:
+            continue
+
+        trigger_at = preview_trigger_time(today, earliest_time)
+        if trigger_at.date() != today or trigger_at.strftime("%H:%M") != current_time:
+            continue
+
+        notification_key = f"preview:{today_key}:{prayer_name}"
+        if notification_key in sent_today:
+            continue
+
+        try:
+            times = prayer_times_by_kokand(today)
+        except Exception as exc:
+            print(f"Namoz preview vaqtlarini olish xatosi: {exc}", file=sys.stderr)
+            continue
+
+        prayer_time = times.get(prayer_name)
+        if not prayer_time:
+            continue
+
+        preview_key = preview_message_key(today, prayer_name)
+        for chat_id in active_chat_ids(users):
+            try:
+                text = format_next_prayer_preview(prayer_name, prayer_time, user_lang(users, chat_id), mosques)
+                send_preview_message(token, users, chat_id, preview_key, text)
+            except Exception as exc:
+                print(f"Namoz preview yuborish xatosi ({chat_id}): {exc}", file=sys.stderr)
+
+        sent_today.append(notification_key)
+        changed = True
+
+    if changed:
+        notifications.clear()
+        notifications[today_key] = sent_today
+        save_notifications(notifications)
+
+
 def check_prayer_notifications(token, users, notifications, mosques):
     now = datetime.now(BOT_TIMEZONE)
     today = now.date()
@@ -1282,6 +1399,7 @@ def check_prayer_notifications(token, users, notifications, mosques):
 
         for chat_id in active_chat_ids(users):
             try:
+                delete_preview_message(token, users, chat_id, preview_message_key(today, prayer_name))
                 text = format_prayer_notification(prayer_name, prayer_time, user_lang(users, chat_id), mosques)
                 send_tracked_message(token, users, chat_id, text)
             except Exception as exc:
@@ -1375,6 +1493,7 @@ def run():
         mosques = load_mosques()
         check_daily_cleanup(token, users, notifications)
         check_daily_summary(token, users, notifications, mosques)
+        check_next_prayer_previews(token, users, notifications, mosques)
         check_prayer_notifications(token, users, notifications, mosques)
         payload = {"timeout": 10}
         if offset is not None:
