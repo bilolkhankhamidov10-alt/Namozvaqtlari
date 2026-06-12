@@ -870,9 +870,6 @@ def mosque_prayer_lines(mosques, prayer_name, lang=LANG_LATIN):
             lines.append(f"   {tr(lang, 'time')}: <b>{prayer_time}</b> | <a href=\"{location_url}\">{tr(lang, 'address')}</a>")
         else:
             lines.append(f"   {tr(lang, 'time')}: <b>{prayer_time}</b>")
-        lines.append("")
-    if lines and lines[-1] == "":
-        lines.pop()
     return lines
 
 
